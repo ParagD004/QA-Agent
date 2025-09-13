@@ -19,7 +19,10 @@ app = FastAPI(title="Company RAG API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js default port
+    allow_origins=[
+        "http://localhost:3000",  # local dev
+        "https://qaagent-dvyayri1m-parag-dharmiks-projects.vercel.app"  # deployed frontend
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
