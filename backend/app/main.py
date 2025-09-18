@@ -5,11 +5,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from langchain.document_loaders import DirectoryLoader, TextLoader
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.schema import Document
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 
@@ -21,7 +21,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # local dev
-        "https://qaagent-dvyayri1m-parag-dharmiks-projects.vercel.app"  # deployed frontend
+        "https://qaagent.vercel.app",  # correct deployed frontend URL
+        "https://qaagent-dvyayri1m-parag-dharmiks-projects.vercel.app",  # old URL (keep for safety)
+        "*"  # Allow all origins for now - you can restrict this later
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -76,15 +78,10 @@ def initialize_rag():
     # Create embeddings and vector store
     embeddings = OpenAIEmbeddings()
     
-    # Delete if already exists
-    if os.path.exists(db_name):
-        Chroma(persist_directory=db_name, embedding_function=embeddings).delete_collection()
-
-    # Create vectorstore
-    vectorstore = Chroma.from_documents(
+    # Create vectorstore using FAISS (no persistence needed for deployment)
+    vectorstore = FAISS.from_documents(
         documents=chunks, 
-        embedding=embeddings, 
-        persist_directory=db_name
+        embedding=embeddings
     )
     
     # Create conversation chain
