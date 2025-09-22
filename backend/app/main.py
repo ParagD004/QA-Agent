@@ -29,7 +29,11 @@ app.add_middleware(
 
 # Load environment variables
 load_dotenv(override=True)
-openai.api_key = os.getenv('OPENAI_API_KEY')
+
+# Initialize OpenAI client
+client = openai.OpenAI(
+    api_key=os.getenv('OPENAI_API_KEY')
+)
 
 # Global variables
 MODEL = "gpt-4o-mini"
@@ -94,7 +98,6 @@ def split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[st
 def get_embedding(text: str) -> List[float]:
     """Get embedding for text using OpenAI API"""
     try:
-        client = openai.OpenAI()
         response = client.embeddings.create(
             model=EMBEDDING_MODEL,
             input=text
@@ -163,8 +166,6 @@ def search_similar_documents(query: str, k: int = 5) -> List[Dict[str, Any]]:
 def generate_response(question: str, context_docs: List[Dict], chat_history: List) -> str:
     """Generate response using OpenAI API with context"""
     try:
-        client = openai.OpenAI()
-        
         # Prepare context from retrieved documents
         context = "\n\n".join([doc["content"] for doc in context_docs])
         
@@ -234,34 +235,16 @@ async def chat_endpoint(request: ChatRequest):
             session_histories[session_id] = []
         chat_history = session_histories[session_id]
 
-        # Prepare input for the chain
-        chain_input = {"question": request.question, "chat_history": chat_history}
-        result = conversation_chain.invoke(chain_input)
-        answer = result["answer"]
+        # Search for relevant documents
+        context_docs = search_similar_documents(request.question, k=5)
+        
+        # Generate response using context and chat history
+        answer = generate_response(request.question, context_docs, chat_history)
 
-        # Update chat history with user question and LLM answer
+        # Update chat history with user question and AI answer
         chat_history.append(("user", request.question))
         chat_history.append(("ai", answer))
 
-        # If the answer is a fallback (e.g., "I don't know"), ask the LLM directly with history
-        if answer.strip().lower() in ["i don't know", "i do not know", "sorry, i don't know", "no relevant information found."]:
-            llm = ChatOpenAI(temperature=0.7, model_name=MODEL)
-            # Format history for LLM: list of dicts/messages
-            messages = []
-            for role, content in chat_history[:-2]:  # Exclude the last fallback answer
-                if role == "user":
-                    messages.append({"role": "user", "content": content})
-                else:
-                    messages.append({"role": "assistant", "content": content})
-            # Add the latest user question
-            messages.append({"role": "user", "content": request.question})
-            direct_answer = llm.invoke(messages)
-            if isinstance(direct_answer, dict) and "content" in direct_answer:
-                answer = direct_answer["content"]
-            else:
-                answer = str(direct_answer)
-            # Update history with new answer
-            chat_history[-1] = ("ai", answer)
         return ChatResponse(answer=answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
