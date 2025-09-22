@@ -8,8 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import openai
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+import math
 
 # Initialize FastAPI app
 app = FastAPI(title="Company RAG API")
@@ -117,6 +116,20 @@ def create_embeddings():
         else:
             embeddings.append([0] * 1536)  # Default embedding size
 
+def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Calculate cosine similarity between two vectors"""
+    if not vec1 or not vec2 or len(vec1) != len(vec2):
+        return 0.0
+    
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    magnitude1 = math.sqrt(sum(a * a for a in vec1))
+    magnitude2 = math.sqrt(sum(a * a for a in vec2))
+    
+    if magnitude1 == 0 or magnitude2 == 0:
+        return 0.0
+    
+    return dot_product / (magnitude1 * magnitude2)
+
 def search_similar_documents(query: str, k: int = 5) -> List[Dict[str, Any]]:
     """Search for similar documents using cosine similarity"""
     if not embeddings or not documents:
@@ -127,21 +140,22 @@ def search_similar_documents(query: str, k: int = 5) -> List[Dict[str, Any]]:
         return []
     
     # Calculate similarities
-    query_embedding = np.array(query_embedding).reshape(1, -1)
-    doc_embeddings = np.array(embeddings)
-    
-    similarities = cosine_similarity(query_embedding, doc_embeddings)[0]
+    similarities = []
+    for doc_embedding in embeddings:
+        similarity = cosine_similarity(query_embedding, doc_embedding)
+        similarities.append(similarity)
     
     # Get top k similar documents
-    top_indices = np.argsort(similarities)[::-1][:k]
+    indexed_similarities = [(i, sim) for i, sim in enumerate(similarities)]
+    indexed_similarities.sort(key=lambda x: x[1], reverse=True)
     
     results = []
-    for idx in top_indices:
-        if similarities[idx] > 0.1:  # Minimum similarity threshold
+    for idx, similarity in indexed_similarities[:k]:
+        if similarity > 0.1:  # Minimum similarity threshold
             results.append({
                 "content": documents[idx]["content"],
                 "metadata": documents[idx]["metadata"],
-                "similarity": float(similarities[idx])
+                "similarity": similarity
             })
     
     return results
