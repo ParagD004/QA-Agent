@@ -30,9 +30,9 @@ const Chatbot = ({ open, onClose }) => {
   if (!open) return null;
 
   const formatTime = (timestamp) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -42,19 +42,32 @@ const Chatbot = ({ open, onClose }) => {
     setMessages((msgs) => [...msgs, userMsg]);
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/chat", {
+      const response = await fetch("https://qa-agent-om46.onrender.com/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: input, session_id: "default" })
       });
+      
       if (!response.ok) {
-        throw new Error("Network response was not ok");
+        const errorText = await response.text();
+        console.error("API Error:", response.status, errorText);
+        throw new Error(`Server error: ${response.status}`);
       }
+      
       const data = await response.json();
       const botMsg = { from: "bot", text: data.answer, timestamp: new Date() };
       setMessages((msgs) => [...msgs, botMsg]);
     } catch (error) {
-      setMessages((msgs) => [...msgs, { from: "bot", text: "Sorry, there was an error. Please try again.", timestamp: new Date() }]);
+      console.error("Chat error:", error);
+      let errorMessage = "Sorry, there was an error. Please try again.";
+      
+      if (error.message.includes("Server error: 500")) {
+        errorMessage = "The server is experiencing issues. Please try again in a moment.";
+      } else if (error.message.includes("Failed to fetch")) {
+        errorMessage = "Unable to connect to the server. Please check your internet connection.";
+      }
+      
+      setMessages((msgs) => [...msgs, { from: "bot", text: errorMessage, timestamp: new Date() }]);
     } finally {
       setInput("");
       setIsLoading(false);
@@ -93,10 +106,10 @@ const Chatbot = ({ open, onClose }) => {
               maxWidth: "80%"
             }}>
               <div style={{ marginBottom: "0.25rem" }}>{msg.text}</div>
-              <div style={{ 
-                fontSize: "0.75rem", 
-                color: "#666", 
-                textAlign: msg.from === "user" ? "right" : "left" 
+              <div style={{
+                fontSize: "0.75rem",
+                color: "#666",
+                textAlign: msg.from === "user" ? "right" : "left"
               }}>
                 {formatTime(msg.timestamp)}
               </div>

@@ -18,7 +18,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # local dev
-        "https://qaagent.vercel.app",  # correct deployed frontend URL
+        "https://qaagent.vercel.app",  # deployed frontend URL
         "https://qaagent-dvyayri1m-parag-dharmiks-projects.vercel.app",  # old URL (keep for safety)
         "*"  # Allow all origins for now - you can restrict this later
     ],
@@ -31,9 +31,17 @@ app.add_middleware(
 load_dotenv(override=True)
 
 # Initialize OpenAI client
-client = openai.OpenAI(
-    api_key=os.getenv('OPENAI_API_KEY')
-)
+api_key = os.getenv('OPENAI_API_KEY')
+if not api_key:
+    print("Warning: OPENAI_API_KEY not found in environment variables")
+    client = None
+else:
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        print("OpenAI client initialized successfully")
+    except Exception as e:
+        print(f"Error initializing OpenAI client: {e}")
+        client = None
 
 # Global variables
 MODEL = "gpt-4o-mini"
@@ -56,8 +64,30 @@ def load_documents():
     """Load and chunk documents from knowledge base"""
     global documents
     
-    folders = glob.glob("knowledge-base/*")
     documents = []
+    
+    # Check if knowledge-base directory exists
+    if not os.path.exists("knowledge-base"):
+        print("Knowledge-base directory not found. Creating sample documents...")
+        # Create some sample documents for demonstration
+        sample_docs = [
+            {
+                "content": "Insurellm is an AI-powered insurance platform that helps users understand insurance policies and claims.",
+                "metadata": {"doc_type": "general", "file_path": "sample", "chunk_id": 0}
+            },
+            {
+                "content": "Our platform provides 24/7 customer support and instant claim processing through AI technology.",
+                "metadata": {"doc_type": "support", "file_path": "sample", "chunk_id": 1}
+            },
+            {
+                "content": "Insurellm offers various insurance products including auto, home, health, and life insurance.",
+                "metadata": {"doc_type": "products", "file_path": "sample", "chunk_id": 2}
+            }
+        ]
+        documents.extend(sample_docs)
+        return
+    
+    folders = glob.glob("knowledge-base/*")
     
     for folder in folders:
         doc_type = os.path.basename(folder)
@@ -97,6 +127,9 @@ def split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[st
 
 def get_embedding(text: str) -> List[float]:
     """Get embedding for text using OpenAI API"""
+    if not client:
+        return []
+    
     try:
         response = client.embeddings.create(
             model=EMBEDDING_MODEL,
@@ -112,12 +145,17 @@ def create_embeddings():
     global embeddings
     embeddings = []
     
+    if not documents:
+        print("No documents to create embeddings for")
+        return
+    
     for doc in documents:
         embedding = get_embedding(doc["content"])
         if embedding:
             embeddings.append(embedding)
         else:
-            embeddings.append([0] * 1536)  # Default embedding size
+            # Use a default embedding size based on the model
+            embeddings.append([0.0] * 1536)  # Default embedding size for text-embedding-3-small
 
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     """Calculate cosine similarity between two vectors"""
@@ -165,22 +203,28 @@ def search_similar_documents(query: str, k: int = 5) -> List[Dict[str, Any]]:
 
 def generate_response(question: str, context_docs: List[Dict], chat_history: List) -> str:
     """Generate response using OpenAI API with context"""
+    
+    # Fallback responses if OpenAI is not available
+    if not client:
+        return get_fallback_response(question)
+    
     try:
         # Prepare context from retrieved documents
-        context = "\n\n".join([doc["content"] for doc in context_docs])
+        if context_docs:
+            context = "\n\n".join([doc["content"] for doc in context_docs])
+            system_message = f"""You are a helpful assistant for Insurellm, an AI-powered insurance platform. 
+            Use the context below to answer questions accurately. If the answer is not in the context, 
+            provide helpful general information about insurance or Insurellm services.
+            
+            Context:
+            {context}"""
+        else:
+            system_message = """You are a helpful assistant for Insurellm, an AI-powered insurance platform. 
+            Help users with questions about insurance, claims, policies, and our services. 
+            Be friendly and informative."""
         
         # Prepare chat history
-        messages = [
-            {
-                "role": "system", 
-                "content": f"""You are a helpful assistant that answers questions based on the provided context. 
-                Use the context below to answer questions accurately. If the answer is not in the context, 
-                say so politely and try to provide a helpful general response.
-                
-                Context:
-                {context}"""
-            }
-        ]
+        messages = [{"role": "system", "content": system_message}]
         
         # Add chat history
         for role, content in chat_history[-10:]:  # Last 10 exchanges
@@ -203,7 +247,26 @@ def generate_response(question: str, context_docs: List[Dict], chat_history: Lis
         
     except Exception as e:
         print(f"Error generating response: {e}")
-        return "I apologize, but I'm having trouble generating a response right now."
+        return get_fallback_response(question)
+
+def get_fallback_response(question: str) -> str:
+    """Provide fallback responses when OpenAI is not available"""
+    question_lower = question.lower()
+    
+    if any(word in question_lower for word in ["hello", "hi", "hey", "greet"]):
+        return "Hello! I'm the Insurellm AI assistant. I'm here to help you with questions about insurance, claims, and our services. How can I assist you today?"
+    
+    elif any(word in question_lower for word in ["insurance", "policy", "coverage"]):
+        return "Insurellm offers comprehensive insurance solutions including auto, home, health, and life insurance. Our AI-powered platform makes it easy to understand your coverage and manage your policies. What specific insurance information are you looking for?"
+    
+    elif any(word in question_lower for word in ["claim", "claims"]):
+        return "Our platform provides instant claim processing through AI technology. You can submit claims 24/7 and track their status in real-time. Would you like to know more about our claims process?"
+    
+    elif any(word in question_lower for word in ["support", "help", "contact"]):
+        return "Insurellm provides 24/7 customer support through our AI-powered platform. You can get instant answers to your questions, file claims, and manage your policies anytime. Is there something specific I can help you with?"
+    
+    else:
+        return "Thank you for your question! I'm here to help with information about Insurellm's insurance services, policies, claims, and support. Could you please provide more details about what you'd like to know?"
 
 # Initialize the RAG system
 def initialize_rag():
@@ -229,6 +292,10 @@ async def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
+        # Validate request
+        if not request.question or not request.question.strip():
+            raise HTTPException(status_code=400, detail="Question cannot be empty")
+        
         # Track chat history per session
         session_id = request.session_id or "default"
         if session_id not in session_histories:
@@ -246,8 +313,11 @@ async def chat_endpoint(request: ChatRequest):
         chat_history.append(("ai", answer))
 
         return ChatResponse(answer=answer)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in chat endpoint: {e}")
+        return ChatResponse(answer="I apologize, but I'm experiencing technical difficulties. Please try again in a moment.")
 
 @app.get("/health")
 async def health_check():
