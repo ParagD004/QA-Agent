@@ -68,23 +68,7 @@ def load_documents():
     
     # Check if knowledge-base directory exists
     if not os.path.exists("knowledge-base"):
-        print("Knowledge-base directory not found. Creating sample documents...")
-        # Create some sample documents for demonstration
-        sample_docs = [
-            {
-                "content": "Insurellm is an AI-powered insurance platform that helps users understand insurance policies and claims.",
-                "metadata": {"doc_type": "general", "file_path": "sample", "chunk_id": 0}
-            },
-            {
-                "content": "Our platform provides 24/7 customer support and instant claim processing through AI technology.",
-                "metadata": {"doc_type": "support", "file_path": "sample", "chunk_id": 1}
-            },
-            {
-                "content": "Insurellm offers various insurance products including auto, home, health, and life insurance.",
-                "metadata": {"doc_type": "products", "file_path": "sample", "chunk_id": 2}
-            }
-        ]
-        documents.extend(sample_docs)
+        print("Knowledge-base directory not found. System will work without document context.")
         return
     
     folders = glob.glob("knowledge-base/*")
@@ -204,9 +188,9 @@ def search_similar_documents(query: str, k: int = 5) -> List[Dict[str, Any]]:
 def generate_response(question: str, context_docs: List[Dict], chat_history: List) -> str:
     """Generate response using OpenAI API with context"""
     
-    # Fallback responses if OpenAI is not available
+    # Only work with OpenAI - no fallback responses
     if not client:
-        return get_fallback_response(question)
+        raise Exception("OpenAI API is not available. Please configure OPENAI_API_KEY.")
     
     try:
         # Prepare context from retrieved documents
@@ -247,26 +231,7 @@ def generate_response(question: str, context_docs: List[Dict], chat_history: Lis
         
     except Exception as e:
         print(f"Error generating response: {e}")
-        return get_fallback_response(question)
-
-def get_fallback_response(question: str) -> str:
-    """Provide fallback responses when OpenAI is not available"""
-    question_lower = question.lower()
-    
-    if any(word in question_lower for word in ["hello", "hi", "hey", "greet"]):
-        return "Hello! I'm the Insurellm AI assistant. I'm here to help you with questions about insurance, claims, and our services. How can I assist you today?"
-    
-    elif any(word in question_lower for word in ["insurance", "policy", "coverage"]):
-        return "Insurellm offers comprehensive insurance solutions including auto, home, health, and life insurance. Our AI-powered platform makes it easy to understand your coverage and manage your policies. What specific insurance information are you looking for?"
-    
-    elif any(word in question_lower for word in ["claim", "claims"]):
-        return "Our platform provides instant claim processing through AI technology. You can submit claims 24/7 and track their status in real-time. Would you like to know more about our claims process?"
-    
-    elif any(word in question_lower for word in ["support", "help", "contact"]):
-        return "Insurellm provides 24/7 customer support through our AI-powered platform. You can get instant answers to your questions, file claims, and manage your policies anytime. Is there something specific I can help you with?"
-    
-    else:
-        return "Thank you for your question! I'm here to help with information about Insurellm's insurance services, policies, claims, and support. Could you please provide more details about what you'd like to know?"
+        raise e
 
 # Initialize the RAG system
 def initialize_rag():
@@ -296,6 +261,10 @@ async def chat_endpoint(request: ChatRequest):
         if not request.question or not request.question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
         
+        # Check if OpenAI is available
+        if not client:
+            raise HTTPException(status_code=503, detail="AI service is not available. Please configure OpenAI API key.")
+        
         # Track chat history per session
         session_id = request.session_id or "default"
         if session_id not in session_histories:
@@ -317,8 +286,17 @@ async def chat_endpoint(request: ChatRequest):
         raise
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
-        return ChatResponse(answer="I apologize, but I'm experiencing technical difficulties. Please try again in a moment.")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/test")
+async def test_endpoint():
+    return {
+        "message": "Test endpoint working",
+        "openai_available": client is not None,
+        "documents_loaded": len(documents),
+        "embeddings_created": len(embeddings)
+    }

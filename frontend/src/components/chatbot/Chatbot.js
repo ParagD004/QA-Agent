@@ -41,33 +41,47 @@ const Chatbot = ({ open, onClose }) => {
     const userMsg = { from: "user", text: input, timestamp: new Date() };
     setMessages((msgs) => [...msgs, userMsg]);
     setIsLoading(true);
+
+    console.log("Sending request to backend:", input);
+
     try {
-      const response = await fetch("https://qa-agent-om46.onrender.com/chat", {
+      const requestBody = { question: input, session_id: "default" };
+      console.log("Request body:", requestBody);
+
+      const response = await fetch("http://localhost:8000/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: input, session_id: "default" })
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(requestBody)
       });
-      
+
+      console.log("Response status:", response.status);
+      console.log("Response headers:", response.headers);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error("API Error:", response.status, errorText);
         throw new Error(`Server error: ${response.status}`);
       }
-      
+
       const data = await response.json();
+      console.log("Response data:", data);
+
       const botMsg = { from: "bot", text: data.answer, timestamp: new Date() };
       setMessages((msgs) => [...msgs, botMsg]);
     } catch (error) {
       console.error("Chat error:", error);
       let errorMessage = "Sorry, there was an error. Please try again.";
-      
+
       if (error.message.includes("Server error: 500")) {
         errorMessage = "The server is experiencing issues. Please try again in a moment.";
       } else if (error.message.includes("Failed to fetch")) {
         errorMessage = "Unable to connect to the server. Please check your internet connection.";
       }
-      
-      setMessages((msgs) => [...msgs, { from: "bot", text: errorMessage, timestamp: new Date() }]);
+
+      setMessages((msgs) => [...msgs, { from: "bot", text: `${errorMessage} (Debug: ${error.message})`, timestamp: new Date() }]);
     } finally {
       setInput("");
       setIsLoading(false);
