@@ -32,11 +32,13 @@ load_dotenv(override=True)
 
 # Initialize OpenAI client
 api_key = os.getenv('OPENAI_API_KEY')
+client = None
+
 if not api_key:
     print("Warning: OPENAI_API_KEY not found in environment variables")
-    client = None
 else:
     try:
+        # Simple OpenAI client initialization
         client = openai.OpenAI(api_key=api_key)
         print("OpenAI client initialized successfully")
     except Exception as e:
@@ -294,9 +296,13 @@ async def health_check():
 
 @app.get("/test")
 async def test_endpoint():
+    api_key = os.getenv('OPENAI_API_KEY')
     return {
         "message": "Test endpoint working",
         "openai_available": client is not None,
+        "api_key_present": api_key is not None,
+        "api_key_length": len(api_key) if api_key else 0,
+        "api_key_starts_with": api_key[:10] + "..." if api_key else "None",
         "documents_loaded": len(documents),
         "embeddings_created": len(embeddings)
     }
